@@ -1,0 +1,626 @@
+添加构建依赖项
+利用 Android Studio 中的 Gradle 构建系统，您可以轻松地将外部二进制文件或其他库模块作为依赖项添加到您的构建中。这些依赖项可位于您的计算机上或远程代码库中，并且它们声明的所有传递依赖项也会自动包含在内。本页介绍了如何在您的 Android 项目中使用依赖项，包括有关 Android Plugin for Gradle 特有的行为和配置的详细信息。如需更深入地了解 Gradle 依赖项的概念，您还应该参阅 Gradle 依赖项管理指南。但请注意，您的 Android 项目只能使用本页上定义的依赖项配置。
+
+注意：指定依赖项时，不应使用动态版本号，如 'com.android.tools.build:gradle:3.+'。使用此功能可能会导致意外的版本更新和难以解析版本差异。
+依赖项类型
+如需向您的项目添加依赖项，请在 build.gradle 文件的 dependencies 代码块中指定依赖项配置，如 implementation。
+
+例如，应用模块的以下 build.gradle 文件包含三种不同类型的依赖项：
+
+
+apply plugin: 'com.android.application'
+
+android { ... }
+
+dependencies {
+    // Dependency on a local library module
+    implementation project(":mylibrary")
+
+    // Dependency on local binaries
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+
+    // Dependency on a remote binary
+    implementation 'com.example.android:app-magic:12.3'
+}
+其中每种依赖项配置都请求不同种类的库依赖项，如下所示：
+
+本地库模块依赖项
+
+implementation project(':mylibrary')
+这声明了对一个名为“mylibrary”（此名称必须与在您的 settings.gradle 文件中使用 include: 定义的库名称相符）的 Android 库模块的依赖关系。在构建您的应用时，构建系统会编译该库模块，并将生成的编译内容打包到 APK 中。
+
+本地二进制文件依赖项
+
+implementation fileTree(dir: 'libs', include: ['*.jar'])
+Gradle 声明了对项目的 module_name/libs/ 目录中 JAR 文件的依赖关系（因为 Gradle 会读取 build.gradle 文件的相对路径）。
+
+或者，您也可以按如下方式指定各个文件：
+
+
+implementation files('libs/foo.jar', 'libs/bar.jar')
+远程二进制文件依赖项
+
+implementation 'com.example.android:app-magic:12.3'
+这实际上是以下代码的简写形式：
+
+
+implementation group: 'com.example.android', name: 'app-magic', version: '12.3'
+这声明了对“com.example.android”命名空间组内的 12.3 版“app-magic”库的依赖关系。
+
+注意：此类远程依赖项要求您声明 Gradle 应在其中查找库的相应远程代码库。如果本地不存在相应的库，那么当 build 需要它时（例如，当您点击 Sync Project with Gradle Files 图标  或运行 build 时），Gradle 会从远程站点提取它。
+
+原生依赖项
+从 Android Gradle 插件 4.0 开始，也可以按照本文档所述的方式导入原生依赖项。
+
+对提供原生库的 AAR 的依赖会自动使这些库可供 externalNativeBuild 所使用的构建系统使用。如要从代码访问这些库，您必须在原生构建脚本中链接到这些库。如需了解详情，请参阅使用原生依赖项。
+
+依赖项配置
+在 dependencies 代码块内，您可以从多种不同的依赖项配置中选择其一（如上面所示的 implementation）来声明库依赖项。每种依赖项配置都向 Gradle 提供了有关如何使用该依赖项的不同说明。下表介绍了您可以对 Android 项目中的依赖项使用的各种配置。此表还将这些配置与自 Android Gradle 插件 3.0.0 起弃用的配置进行了比较。
+
+配置	行为
+implementation	Gradle 会将依赖项添加到编译类路径，并将依赖项打包到构建输出。不过，当您的模块配置 implementation 依赖项时，会让 Gradle 了解您不希望该模块在编译时将该依赖项泄露给其他模块。也就是说，其他模块只有在运行时才能使用该依赖项。
+使用此依赖项配置代替 api 或 compile（已弃用）可以显著缩短构建时间，因为这样可以减少构建系统需要重新编译的模块数。例如，如果 implementation 依赖项更改了其 API，Gradle 只会重新编译该依赖项以及直接依赖于它的模块。大多数应用和测试模块都应使用此配置。
+
+api	Gradle 会将依赖项添加到编译类路径和构建输出。当一个模块包含 api 依赖项时，会让 Gradle 了解该模块要以传递方式将该依赖项导出到其他模块，以便这些模块在运行时和编译时都可以使用该依赖项。
+此配置的行为类似于 compile（现已弃用），但使用它时应格外小心，只能对您需要以传递方式导出到其他上游消费者的依赖项使用它。这是因为，如果 api 依赖项更改了其外部 API，Gradle 会在编译时重新编译所有有权访问该依赖项的模块。因此，拥有大量的 api 依赖项会显著增加构建时间。除非要将依赖项的 API 公开给单独的模块，否则库模块应改用 implementation 依赖项。
+
+compileOnly	Gradle 只会将依赖项添加到编译类路径（也就是说，不会将其添加到构建输出）。如果您创建 Android 模块时在编译期间需要相应依赖项，但它在运行时可有可无，此配置会很有用。
+如果您使用此配置，那么您的库模块必须包含一个运行时条件，用于检查是否提供了相应依赖项，然后适当地改变该模块的行为，以使该模块在未提供相应依赖项的情况下仍可正常运行。这样做不会添加不重要的瞬时依赖项，因而有助于减小最终 APK 的大小。此配置的行为类似于 provided（现已弃用）。
+
+注意：您不能将 compileOnly 配置与 AAR 依赖项配合使用。
+
+runtimeOnly	Gradle 只会将依赖项添加到构建输出，以便在运行时使用。也就是说，不会将其添加到编译类路径。此配置的行为类似于 apk（现已弃用）。
+annotationProcessor
+如需添加对作为注解处理器的库的依赖，您必须使用 annotationProcessor 配置将其添加到注解处理器的类路径。这是因为，使用此配置可以将编译类路径与注释处理器类路径分开，从而提高构建性能。如果 Gradle 在编译类路径上找到注释处理器，则会禁用避免编译功能，这样会对构建时间产生负面影响（Gradle 5.0 及更高版本会忽略在编译类路径上找到的注释处理器）。
+
+如果 JAR 文件包含以下文件，则 Android Gradle 插件会假定依赖项是注释处理器：
+META-INF/services/javax.annotation.processing.Processor。 如果插件检测到编译类路径上包含注解处理器，则会产生构建错误。
+
+注意：Kotlin 项目应使用 kapt 声明注解处理器依赖项。
+
+lintChecks	使用此配置可以添加您希望 Gradle 在构建项目时执行的 lint 检查。
+注意：使用 Android Gradle 插件 3.4.0 及更高版本时，此依赖项配置不再将 lint 检查打包在 Android 库项目中。如需将 lint 检查依赖项包含在 AAR 库中，请使用下面介绍的 lintPublish 配置。
+
+lintPublish	在 Android 库项目中使用此配置可以添加您希望 Gradle 编译成 lint.jar 文件并打包在 AAR 中的 lint 检查。这会使得使用 AAR 的项目也应用这些 lint 检查。如果您之前使用 lintChecks 依赖项配置将 lint 检查添加到已发布的 AAR 中，则需要迁移这些依赖项以改用 lintPublish 配置。
+
+
+dependencies {
+  // Executes lint checks from the ':checks' project
+  // at build time.
+  lintChecks project(':checks')
+  // Compiles lint checks from the ':checks-to-publish'
+  // into a lint.jar file and publishes it to your
+  // Android library.
+  lintPublish project(':checks-to-publish')
+}
+已弃用的配置（在 AGP 1.0–4.2 中可用）
+配置	行为
+apk	Gradle 只会将依赖项添加到构建输出，以便在运行时使用。也就是说，不会将其添加到编译类路径。
+compile	Gradle 会将依赖项添加到编译类路径和构建输出。 将依赖项导出到其他模块。
+provided	Gradle 只会将依赖项添加到编译类路径（也就是说，不会将其添加到构建输出）。
+以上所有配置会将依赖项应用于所有构建变体。如果您只想为特定的构建变体源代码集或测试源代码集声明依赖项，则必须将配置名称的首字母大写，并在其前面加上构建变体或测试源代码集的名称作为前缀。
+
+例如，如需只向“free”产品变种添加 implementation 依赖项（使用远程二进制文件依赖项），请使用如下所示的代码：
+
+
+dependencies {
+    freeImplementation 'com.google.firebase:firebase-ads:9.8.0'
+}
+不过，如果您想为将产品变种和构建类型组合在一起的变体添加依赖项，就必须在 configurations 代码块中初始化配置名称。以下示例向“freeDebug”构建变体添加了 runtimeOnly 依赖项（使用本地二进制文件依赖项）：
+
+
+configurations {
+    // Initializes a placeholder for the freeDebugRuntimeOnly dependency
+    // configuration.
+    freeDebugRuntimeOnly {}
+}
+
+dependencies {
+    freeDebugRuntimeOnly fileTree(dir: 'libs', include: ['*.jar'])
+}
+如需为本地测试和插桩测试添加 implementation 依赖项，请使用如下所示的代码：
+
+
+dependencies {
+    // Adds a remote binary dependency only for local tests.
+    testImplementation 'junit:junit:4.12'
+
+    // Adds a remote binary dependency only for the instrumented test APK.
+    androidTestImplementation 'com.android.support.test.espresso:espresso-core:3.0.2'
+}
+不过，某些配置在这种情况下没有意义。例如，因为其他模块不能依赖于 androidTest，所以如果您使用 androidTestApi 配置，会收到以下警告：
+
+
+WARNING: Configuration 'androidTestApi' is obsolete and has been replaced with
+'androidTestImplementation'.
+添加注释处理器
+如果将注释处理器添加到编译类路径，您将看到一条与以下内容类似的错误消息：
+
+
+Error: Annotation processors must be explicitly declared now.
+如需解决此错误，请使用 annotationProcessor 配置依赖项，以将注解处理器添加到您的项目，如下所示：
+
+
+dependencies {
+    // Adds libraries defining annotations to only the compile classpath.
+    compileOnly 'com.google.dagger:dagger:version-number'
+    // Adds the annotation processor dependency to the annotation processor classpath.
+    annotationProcessor 'com.google.dagger:dagger-compiler:version-number'
+}
+注意：Android Plugin for Gradle 3.0.0 及更高版本不再支持 android-apt 插件。
+
+向注解处理器传递参数
+如果需要向注解处理器传递参数，您可以使用模块构建配置中的 AnnotationProcessorOptions 代码块执行此操作。例如，如果要以键值对形式传递基元数据类型，您可以使用 argument 属性，如下所示：
+
+
+android {
+    ...
+    defaultConfig {
+        ...
+        javaCompileOptions {
+            annotationProcessorOptions {
+                argument "key1", "value1"
+                argument "key2", "value2"
+            }
+        }
+    }
+}
+不过，在使用 Android Gradle 插件 3.2.0 及更高版本时，您需要使用 Gradle 的 CommandLineArgumentProvider 接口传递表示文件或目录的处理器参数。
+
+借助 CommandLineArgumentProvider，您或注解处理器创建者可将增量构建属性类型注解应用于每个参数，从而提高增量构建和缓存整洁构建的正确性和性能。
+
+例如，下面的类实现了 CommandLineArgumentProvider 并注释了处理器的每个参数。此外，此示例还使用了 Groovy 语言语法，并且直接包含在模块的 build.gradle 文件中。
+
+注意：通常，注释处理器作者会提供此类或有关如何编写这种类的说明。这是因为，每个参数都需要指定正确的构建属性类型注解，才能按预期运行。
+
+class MyArgsProvider implements CommandLineArgumentProvider {
+
+    // Annotates each directory as either an input or output for the
+    // annotation processor.
+    @InputFiles
+    // Using this annotation helps Gradle determine which part of the file path
+    // should be considered during up-to-date checks.
+    @PathSensitive(PathSensitivity.RELATIVE)
+    FileCollection inputDir
+
+    @OutputDirectory
+    File outputDir
+
+    // The class constructor sets the paths for the input and output directories.
+    MyArgsProvider(FileCollection input, File output) {
+        inputDir = input
+        outputDir = output
+    }
+
+    // Specifies each directory as a command line argument for the processor.
+    // The Android plugin uses this method to pass the arguments to the
+    // annotation processor.
+    @Override
+    Iterable<String> asArguments() {
+        // Use the form '-Akey[=value]' to pass your options to the Java compiler.
+        ["-AinputDir=${inputDir.singleFile.absolutePath}",
+         "-AoutputDir=${outputDir.absolutePath}"]
+    }
+}
+
+android {...}
+创建一个实现 CommandLineArgumentProvider 的类后，您需要对其进行初始化并使用 annotationProcessorOptions.compilerArgumentProvider 属性将其传递给 Android 插件，如下所示。
+
+
+// This is in your module's build.gradle file.
+android {
+    defaultConfig {
+        javaCompileOptions {
+            annotationProcessorOptions {
+                // Creates a new MyArgsProvider object, specifies the input and
+                // output paths for the constructor, and passes the object
+                // to the Android plugin.
+                compilerArgumentProvider new MyArgsProvider(files("input/path"),
+                                         new File("output/path"))
+            }
+        }
+    }
+}
+如需详细了解实现 CommandLineArgumentProvider 如何帮助提高构建性能，请阅读缓存 Java 项目。
+
+停用注释处理器错误检查
+如果编译类路径中的依赖项包含您不需要的注释处理器，您可以通过将以下代码添加到 build.gradle 文件来停用错误检查。请注意，您添加到编译类路径中的注释处理器仍不会被添加到处理器类路径中。
+
+
+android {
+    ...
+    defaultConfig {
+        ...
+        javaCompileOptions {
+            annotationProcessorOptions {
+                includeCompileClasspath false
+            }
+        }
+    }
+}
+如果在将项目的注释处理器迁移到处理器类路径后遇到问题，您可以通过将 includeCompileClasspath 设为 true，允许编译类路径中包含注释处理器。不过，不建议将此属性设为 true，在 Android 插件的未来更新中将会移除用来执行此操作的选项。
+
+排除传递依赖项
+随着应用的范围不断扩大，它可能会包含许多依赖项，包括直接依赖项和传递依赖项（应用中导入的库所依赖的库）。如需排除不再需要的传递依赖项，您可以使用 exclude 关键字，如下所示：
+
+
+dependencies {
+    implementation('some-library') {
+        exclude group: 'com.example.imgtools', module: 'native'
+    }
+}
+从测试配置中排除传递依赖项
+如果您需要从测试中排除某些传递依赖项，上面所示的代码示例可能无法按预期发挥作用。这是因为，测试配置（例如 androidTestImplementation）扩展了模块的 implementation 配置。也就是说，当 Gradle 解析配置时，测试配置始终包含 implementation 依赖项。
+
+因此，如需从测试中排除传递依赖项，则必须在执行代码时执行此操作，如下所示：
+
+
+android.testVariants.all { variant ->
+    variant.getCompileConfiguration().exclude group: 'com.jakewharton.threetenabp', module: 'threetenabp'
+    variant.getRuntimeConfiguration().exclude group: 'com.jakewharton.threetenabp', module: 'threetenabp'
+}
+注意：您仍可在依赖项代码块中使用 exclude 关键字（如排除依赖项部分的原始代码示例所示），以省略测试配置特有的（即其他配置不包含的）传递依赖项。
+
+使用变体感知型依赖项管理机制
+Android 插件 3.0.0 及更高版本包含一种新的依赖项机制，该机制可在使用库时自动匹配变体。这意味着，应用的 debug 变体会自动使用库的 debug 变体，依此类推。在使用变种时（这时应用的 freeDebug 变体将使用库的 freeDebug 变体），这种机制也同样适用。
+
+为了让插件准确匹配变体，您需要在无法进行直接匹配的情况下提供匹配回退机制。不妨假设您的应用配置了一个名为“staging”的构建类型，但该应用的一个库依赖项没有进行相应配置。当插件尝试构建“staging”版本的应用时，它不知道要使用哪个版本的库，因此您将看到一条与以下内容类似的错误消息：
+
+
+Error:Failed to resolve: Could not resolve project :mylibrary.
+Required by:
+    project :app
+解决与变体匹配相关的构建错误
+插件包含一些 DSL 元素，这些元素有助于控制 Gradle 应如何解决应用与依赖项之间无法进行直接变体匹配的问题。请参阅下表，以确定应使用哪个 DSL 属性来解决与变体感知依赖项匹配相关的特定编译错误。
+
+编译错误原因	解决方案
+您的应用包含库依赖项不包含的构建类型。
+
+例如，您的应用包含“staging”版本类型，但依赖项仅包含“debug”和“release”版本类型。
+
+请注意，如果库依赖项包含您的应用不包含的编译类型，这不会引发问题。这是因为，插件在任何时候都不会从依赖项请求该构建类型。
+
+使用 matchingFallbacks 为给定的构建类型指定替代匹配，如下所示：
+
+
+
+// In the app's build.gradle file.
+android {
+    buildTypes {
+        debug {}
+        release {}
+        staging {
+            // Specifies a sorted list of fallback build types that the
+            // plugin should try to use when a dependency does not include a
+            // "staging" build type. You may specify as many fallbacks as you
+            // like, and the plugin selects the first build type that's
+            // available in the dependency.
+            matchingFallbacks = ['debug', 'qa', 'release']
+        }
+    }
+}
+对于应用及其库依赖项中均存在的给定变种维度，您的应用包含库不包含的变种。
+
+例如，您的应用及其库依赖项都包含“tier”变种维度。不过，应用中的“tier”维度包含“free”和“paid”变种，但依赖项中的同一维度仅包含“demo”和“paid”变种。
+
+请注意，对于应用及其库依赖项中均存在的给定变种维度，如果库包含您的应用不包含的产品变种，这不会引发问题。这是因为，插件在任何时候都不会从依赖项请求该变种。
+
+使用 matchingFallbacks 为应用的“free”产品变种指定替代匹配，如下所示：
+
+
+
+// In the app's build.gradle file.
+android {
+    defaultConfig{
+    // Do not configure matchingFallbacks in the defaultConfig block.
+    // Instead, you must specify fallbacks for a given product flavor in the
+    // productFlavors block, as shown below.
+  }
+    flavorDimensions 'tier'
+    productFlavors {
+        paid {
+            dimension 'tier'
+            // Because the dependency already includes a "paid" flavor in its
+            // "tier" dimension, you don't need to provide a list of fallbacks
+            // for the "paid" flavor.
+        }
+        free {
+            dimension 'tier'
+            // Specifies a sorted list of fallback flavors that the plugin
+            // should try to use when a dependency's matching dimension does
+            // not include a "free" flavor. You may specify as many
+            // fallbacks as you like, and the plugin selects the first flavor
+            // that's available in the dependency's "tier" dimension.
+            matchingFallbacks = ['demo', 'trial']
+        }
+    }
+}
+库依赖项包含您的应用不包含的变种维度。
+
+例如，库依赖项包含“minApi”维度的变种，但您的应用仅包含“tier”维度的变种。因此，当您要构建“freeDebug”版本的应用时，插件不知道是使用“minApi23Debug”还是“minApi18Debug”版本的依赖项。
+
+请注意，如果您的应用包含库依赖项不包含的变种维度，这不会引发问题。这是因为，插件只会匹配依赖项中存在的维度的变种。例如，如果依赖项不包含 ABI 的维度，“freeX86Debug”版本的应用将直接使用“freeDebug”版本的依赖项。
+
+在 defaultConfig 代码块中使用 missingDimensionStrategy 指定插件应从每个缺失维度中选择的默认变种，如以下示例所示。您也可以替换在 productFlavors 代码块中的选择，让每一个变种都可以为缺失维度指定一个不同的匹配策略。
+
+
+
+// In the app's build.gradle file.
+android {
+    defaultConfig{
+    // Specifies a sorted list of flavors that the plugin should try to use from
+    // a given dimension. The following tells the plugin that, when encountering
+    // a dependency that includes a "minApi" dimension, it should select the
+    // "minApi18" flavor. You can include additional flavor names to provide a
+    // sorted list of fallbacks for the dimension.
+    missingDimensionStrategy 'minApi', 'minApi18', 'minApi23'
+    // You should specify a missingDimensionStrategy property for each
+    // dimension that exists in a local dependency but not in your app.
+    missingDimensionStrategy 'abi', 'x86', 'arm64'
+    }
+    flavorDimensions 'tier'
+    productFlavors {
+        free {
+            dimension 'tier'
+            // You can override the default selection at the product flavor
+            // level by configuring another missingDimensionStrategy property
+            // for the "minApi" dimension.
+            missingDimensionStrategy 'minApi', 'minApi23', 'minApi18'
+        }
+        paid {}
+    }
+}
+配置 Wear OS 应用依赖项
+配置 Wear OS 模块的依赖项与配置其他任何模块的依赖项相似。也就是说，它们使用相同的依赖项配置，如 implementation 和 compileOnly。
+
+Wear 模块还支持变体感知型依赖项管理机制。因此，如果您的基础应用模块依赖于一个 Wear 模块，则基础模块的每个变体都会使用该 Wear 模块的匹配变体。如果您构建的是一个简单应用，它只依赖于一个 Wear 模块，而该模块配置的变体与您的基础模块相同，那么您需要在基础模块的 build.gradle 文件中指定 wearApp 配置，如下所示：
+
+
+dependencies {
+    // If the main and Wear app modules have the same variants,
+    // variant-aware dependency management automatically matches
+    // variants of the main app module with that of the wear module.
+    wearApp project(':wearable')
+}
+如果您拥有多个 Wear 模块并且要为每个应用变种指定不同的 Wear 模块，您可以使用 flavorWearApp 配置执行此操作，如下所示（不过，您不能添加使用 wearApp 配置的其他依赖项）：
+
+
+dependencies {
+    paidWearApp project(':wear1')
+    demoWearApp project(':wear1')
+    freeWearApp project(':wear2')
+}
+远程代码库
+当您的依赖项不是本地库或文件树时，Gradle 会在 build.gradle 文件的 repositories 代码块中指定的所有在线代码库中查找相关文件。各个代码库的列出顺序决定了 Gradle 在这些代码库中搜索各个项目依赖项的顺序。例如，如果从代码库 A 和 B 均可获得某个依赖项，而您先列出了代码库 A，则 Gradle 会从代码库 A 下载该依赖项。
+
+默认情况下，新的 Android Studio 项目会将 Google 的 Maven 代码库和 JCenter 指定为项目的顶级 build.gradle 文件中的代码库位置，如下所示：
+
+
+allprojects {
+    repositories {
+        google()
+        jcenter()
+    }
+}
+如果您要从 Maven 中央代码库获取某些内容，则添加 mavenCentral()；对于本地代码库，则使用 mavenLocal()：
+
+
+allprojects {
+    repositories {
+        google()
+        jcenter()
+        mavenCentral()
+        mavenLocal()
+    }
+}
+或者，您也可以按如下方式声明特定的 Maven 或 Ivy 代码库：
+
+
+allprojects {
+    repositories {
+        maven {
+            url "https://repo.example.com/maven2"
+        }
+        maven {
+            url "file://local/repo/"
+        }
+        ivy {
+            url "https://repo.example.com/ivy"
+        }
+    }
+}
+要了解详情，请参阅 Gradle 代码库指南。
+
+Google 的 Maven 代码库
+Google 的 Maven 代码库中提供了以下 Android 代码库的最新版本：
+
+Android 支持库
+架构组件库
+约束布局库
+AndroidX 测试
+数据绑定库
+Android 免安装应用库
+Wear OS
+Google Play 服务
+Google Play 结算库
+Firebase
+您可以在 Google 的 Maven 代码库索引中查看所有可用的工件（如需了解以编程方式访问，请参阅下文）。
+
+如需将其中某个库添加到您的 build 中，请在顶级 build.gradle 文件中包含 Google 的 Maven 代码库：
+
+
+allprojects {
+    repositories {
+        google()
+
+        // If you're using a version of Gradle lower than 4.1, you must instead use:
+        // maven {
+        //     url 'https://maven.google.com'
+        // }
+        // An alternative URL is 'https://dl.google.com/dl/android/maven2/'
+    }
+}
+然后，将所需的库添加到模块的 dependencies 代码块中。例如，appcompat 库如下所示：
+
+
+dependencies {
+    implementation 'com.android.support:appcompat-v7:28.0.0'
+}
+不过，如果您在尝试使用旧版上述库时依赖项失败，则表明 Maven 代码库中未提供该版本，您必须从离线代码库获取该库。
+
+以编程方式访问
+如需以编程方式访问 Google 的 Maven 工件，可以从 maven.google.com/master-index.xml 获取工件组的 XML 列表。然后，您可以从以下位置查看任意组的库名称和版本信息：
+
+maven.google.com/group_path/group-index.xml
+
+例如，android.arch.lifecycle 组中的库就列在 maven.google.com/android/arch/lifecycle/group-index.xml 中。
+
+您也可以从以下位置下载 POM 和 JAR 文件：
+
+maven.google.com/group_path/library/version/library-version.ext
+
+例如：maven.google.com/android/arch/lifecycle/compiler/1.0.0/compiler-1.0.0.pom。
+
+SDK 管理器中的离线代码库
+对于无法从 Google Maven 代码库中获得的库（通常是旧版库），您必须从 SDK 管理器下载离线 Google 代码库软件包。
+
+然后，您可以照常将这些库添加到 dependencies 代码块中。
+
+离线库保存在 android_sdk/extras/ 中。
+
+依赖项顺序
+依赖项的列出顺序指明了每个库的优先级：第一个库的优先级高于第二个，第二个库的优先级高于第三个，依此类推。在合并资源或将清单元素从库中合并到应用中时，此顺序很重要。
+
+例如，如果您的项目声明以下内容：
+
+依赖 LIB_A 和 LIB_B（按此顺序）
+LIB_A 依赖于 LIB_C 和 LIB_D（按此顺序）
+LIB_B 也依赖于 LIB_C
+那么，扁平型依赖项顺序将如下所示：
+
+LIB_A
+LIB_D
+LIB_B
+LIB_C
+这可以确保 LIB_A 和 LIB_B 都可以替换 LIB_C；并且 LIB_D 的优先级仍高于 LIB_B，因为 LIB_A（依赖前者）的优先级高于 LIB_B。
+
+如需详细了解如何合并来自不同项目来源/依赖项的清单，请参阅合并多个清单文件。
+
+查看模块依赖项
+一些直接依赖项可能具有自己的依赖项。此类依赖项称为“传递依赖项”。Gradle 将会自动为您收集并添加这些传递依赖项，无需您手动逐一加以声明。Android Plugin for Gradle 提供了一项任务，用来列出 Gradle 为给定模块解析的依赖项。
+
+对于每个模块，报告还会根据构建变体、测试源代码集和类路径对依赖项进行分组。下面是一个应用模块的依赖项示例报告，其中按该模块的调试构建变体的运行时类路径和该模块的插桩测试源代码集的编译类路径对依赖项进行了分组。
+
+
+debugRuntimeClasspath - Dependencies for runtime/packaging
++--- :mylibrary (variant: debug)
++--- com.google.android.material:material:1.0.0@aar
++--- androidx.appcompat:appcompat:1.0.2@aar
++--- androidx.constraintlayout:constraintlayout:1.1.3@aar
++--- androidx.fragment:fragment:1.0.0@aar
++--- androidx.vectordrawable:vectordrawable-animated:1.0.0@aar
++--- androidx.recyclerview:recyclerview:1.0.0@aar
++--- androidx.legacy:legacy-support-core-ui:1.0.0@aar
+...
+
+debugAndroidTest
+debugAndroidTestCompileClasspath - Dependencies for compilation
++--- androidx.test.ext:junit:1.1.0@aar
++--- androidx.test.espresso:espresso-core:3.1.1@aar
++--- androidx.test:runner:1.1.1@aar
++--- junit:junit:4.12@jar
+...
+如需运行该任务，请按以下步骤操作：
+
+依次选择 View > Tool Windows > Gradle（或点击工具窗口栏中的 Gradle 图标 ）。
+依次展开 AppName > Tasks > android，然后双击 androidDependencies。Gradle 执行该任务后，系统应该会打开 Run 窗口以显示输出。
+如需详细了解如何管理 Gradle 中的依赖项，请参阅 Gradle 用户指南中的依赖项管理基础知识。
+
+修复依赖项解析错误
+当您向应用项目添加多个依赖项时，这些直接和传递依赖项可能会相互冲突。Android Gradle 插件会尝试妥善解决这些冲突，但有些冲突可能会导致编译时或运行时错误。
+
+为帮助您调查是哪些依赖项导致了错误，请检查您的应用的依赖项树，从中查找出现了多次或存在版本冲突的依赖项。
+
+如果无法轻松识别重复的依赖项，请尝试使用 Android Studio 的界面搜索包含重复类的依赖项，具体操作步骤如下：
+
+从菜单栏中依次选择 Navigate > Class。
+在弹出式搜索对话框中，确保已勾选 Include non-project items 旁边的框。
+输入出现在构建错误中的类的名称。
+检查结果以查找包含该类的依赖项。
+下面几部分介绍您可能会遇到的不同类型的依赖项解析错误及其修复方法。
+
+修复重复类错误
+如果某个类多次出现在运行时类路径上，您会收到一条与以下内容类似的错误：
+
+
+Program type already present com.example.MyClass
+此错误通常是下列其中一种情况所致：
+
+二进制文件依赖项包含一个库，该库也作为直接依赖项包含在您的应用中。例如，您的应用声明直接依赖于库 A 和库 B，但库 A 已在其二进制文件中包含库 B。
+如需解决此问题，请取消将库 B 作为直接依赖项。
+您的应用的本地二进制文件依赖项和远程二进制文件依赖项是同一个库。
+如需解决此问题，请移除其中一个二进制文件依赖项。
+解决类路径之间的冲突
+当 Gradle 解析编译类路径时，会先解析运行时类路径，然后使用所得结果确定应添加到编译类路径的依赖项版本。换句话说，运行时类路径决定了下游类路径上完全相同的依赖项所需的版本号。
+
+应用的运行时类路径还决定了 Gradle 需要对应用的测试 APK 的运行时类路径中的匹配依赖项使用的版本号。图 1 说明了类路径的层次结构。
+
+
+
+图 1. 出现在多个类路径中的依赖项的版本号必须根据此层次结构匹配。
+
+例如，当应用使用 implementation 依赖项配置添加某个依赖项的一个版本，而库模块使用 runtimeOnly 配置添加该依赖项的另一个版本时，就可能发生多个类路径中出现同一依赖项的不同版本的冲突。
+
+在解析对运行时和编译时类路径的依赖关系时，Android Gradle 插件 3.3.0 及更高版本会尝试自动解决某些下游版本冲突。例如，如果运行时类路径包含库 A 版本 2.0，而编译类路径包含库 A 版本 1.0，则插件会自动将对编译类路径的依赖关系更新为库 A 版本 2.0，以避免错误。
+
+不过，如果运行时类路径包含库 A 版本 1.0，而编译类路径包含库 A 版本 2.0，插件不会将对编译类路径的依赖关系降级为库 A 版本 1.0，您仍会收到一条与以下内容类似的错误：
+
+
+Conflict with dependency 'com.example.library:some-lib:2.0' in project 'my-library'.
+Resolved versions for runtime classpath (1.0) and compile classpath (2.0) differ.
+如需解决此问题，请执行以下某项操作：
+
+将所需版本的依赖项作为 api 依赖项添加到库模块。也就是说，尽管只有库模块声明了相应依赖项，但应用模块同样能够访问其 API。
+或者，您也可以同时在两个模块中声明相应依赖项，但应确保两个模块使用的依赖项版本相同。不妨考虑配置项目全局属性，以确保每个依赖项的版本在整个项目中保持一致。
+应用自定义构建逻辑
+本部分介绍的高级主题在您要扩展 Android Gradle 插件或编写自己的插件时很有用。
+
+向自定义逻辑发布变体依赖项
+库可以包含其他项目或子项目可能要使用的功能。发布库是向其消费者提供库的过程。库可以控制其消费者在编译时和运行时可访问的依赖项。
+
+有两种不同的配置，它们包含每个类路径的传递依赖项，消费者为了使用相应库而必须使用这些依赖项，具体说明如下：
+
+variant_nameApiElements：此配置包含编译时消费者可使用的传递依赖项。
+variant_nameRuntimeElements：此配置包含消费者在运行时可使用的传递依赖项。
+如需详细了解不同配置之间的关系，请参阅 Java 库插件配置。
+
+自定义依赖项解析策略
+一个项目可能会依赖于同一个库的两个不同版本，这样会导致依赖项冲突。例如，如果您的项目依赖于模块 A 的版本 1 和模块 B 的版本 2，而模块 A 以传递方式依赖于模块 B 的版本 3，则会出现依赖项版本冲突。
+
+为了解决此冲突，Android Gradle 插件使用以下依赖项解析策略：当插件检测到依赖项关系图中存在同一模块的不同版本时，默认情况下，它会选择版本号最高的一个。
+
+不过，此策略可能并不总是如您所愿。如需自定义依赖项解析策略，请使用以下配置解析任务所需的特定变体依赖项：
+
+variant_nameCompileClasspath：此配置包含适用于给定变体编译类路径的解析策略。
+variant_nameRuntimeClasspath：此配置包含适用于给定变体运行时类路径的解析策略。
+Android Gradle 插件包含可用于访问每个变体的配置对象的 getter。因此，您可以使用变体 API 查询依赖项解析，如以下示例所示：
+
+
+android {
+    applicationVariants.all { variant ->
+        // Return compile configuration objects of a variant.
+        variant.getCompileConfiguration().resolutionStrategy {
+        // Use Gradle's ResolutionStrategy API
+        // to customize how this variant resolves dependencies.
+            ...
+        }
+        // Return runtime configuration objects of a variant.
+        variant.getRuntimeConfiguration().resolutionStrategy {
+            ...
+        }
+        // Return annotation processor configuration of a variant.
+        variant.getAnnotationProcessorConfiguration().resolutionStrategy {
+            ...
+        }
+    }
+}

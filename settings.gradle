@@ -1,0 +1,3 @@
+rootProject.name = "CanvasScrollView"
+include ':demo'
+include ':CanvasScrollView'
